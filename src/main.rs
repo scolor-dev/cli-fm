@@ -39,6 +39,8 @@ fn main() -> std::io::Result<()> {
         match input::read()? {
             input::Action::Up => app.up(),
             input::Action::Down => app.down(),
+            input::Action::Enter => app.enter(),
+            input::Action::Back => app.back(),
             input::Action::Quit => app.quit(),
             input::Action::None => {}
         }

@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState},
     style::{Color, Style},
@@ -10,11 +12,18 @@ pub fn draw(frame: &mut Frame, app: &App) {
     let items: Vec<ListItem> = app
         .entries
         .iter()
-        .map(|e| ListItem::new(e.as_str()))
+        .map(|path| {
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("?");
+
+            ListItem::new(name.to_string())
+        })
         .collect();
 
     let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("mini-yazi"))
+        .block(Block::default().borders(Borders::ALL).title(app.cwd.to_string_lossy()))
         .highlight_style(
             Style::default()
                 .bg(Color::Blue)
