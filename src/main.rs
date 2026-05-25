@@ -1,15 +1,20 @@
 mod app;
 mod input;
-mod theme;
 mod ui;
+mod theme;
+mod config;
+mod keymap;
+mod action;
 
 use app::App;
+use config::Config;
+use keymap::KeyMap;
 
 use crossterm::{
     execute,
     terminal::{
-        disable_raw_mode,
         enable_raw_mode,
+        disable_raw_mode,
         EnterAlternateScreen,
         LeaveAlternateScreen,
     },
@@ -30,8 +35,10 @@ fn main() -> std::io::Result<()> {
     execute!(stdout, EnterAlternateScreen)?;
 
     let backend = CrosstermBackend::new(stdout);
-
     let mut terminal = Terminal::new(backend)?;
+
+    let config = Config::load();
+    let keymap = KeyMap::from_config(&config);
 
     let mut app = App::new();
 
@@ -40,25 +47,13 @@ fn main() -> std::io::Result<()> {
             ui::draw(f, &app);
         })?;
 
-        match input::read()? {
-            input::Action::Up => {
-                app.up();
-                app.update_preview();
-            }
-            input::Action::Down => {
-                app.down();
-                app.update_preview();
-            }
-            input::Action::Enter => {
-                app.enter();
-                app.update_preview();
-            }
-            input::Action::Back => {
-                app.back();
-                app.update_preview();
-            }
-            input::Action::Quit => app.quit(),
-            _ => {}
+        match input::read(&keymap)? {
+            action::Action::Up => app.up(),
+            action::Action::Down => app.down(),
+            action::Action::Enter => app.enter(),
+            action::Action::Back => app.back(),
+            action::Action::Quit => app.quit(),
+            action::Action::None => {}
         }
 
         if app.should_quit {

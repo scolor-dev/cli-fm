@@ -37,7 +37,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         .collect();
 
     let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("files"))
+        .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(app.theme.border)).title(app.cwd.to_string_lossy()))
         .highlight_symbol(">> ")
         .highlight_style(
             Style::default()
