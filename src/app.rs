@@ -17,6 +17,8 @@ pub struct App {
     pub should_quit: bool,
 
     pub theme: Theme,
+
+    pub preview: Option<String>,
 }
 
 impl App {
@@ -26,16 +28,15 @@ impl App {
         let mut app = Self {
             cwd,
             entries: Vec::new(),
-
             cursor: 0,
             scroll: 0,
-
             should_quit: false,
-
             theme: Theme::default(),
+            preview: None,
         };
 
         app.refresh();
+        app.update_preview();
 
         app
     }
@@ -46,7 +47,6 @@ impl App {
                 .filter_map(|e| e.ok())
                 .map(|e| e.path())
                 .collect(),
-
             Err(_) => Vec::new(),
         };
 
@@ -54,6 +54,21 @@ impl App {
 
         if self.cursor >= self.entries.len() {
             self.cursor = self.entries.len().saturating_sub(1);
+        }
+    }
+
+    pub fn update_preview(&mut self) {
+        let Some(path) = self.entries.get(self.cursor) else {
+            self.preview = None;
+            return;
+        };
+
+        if path.is_file() {
+            self.preview = std::fs::read_to_string(path)
+                .ok()
+                .map(|s| s.chars().take(2000).collect());
+        } else {
+            self.preview = Some("[directory]".to_string());
         }
     }
 
@@ -84,10 +99,8 @@ impl App {
 
         if path.is_dir() {
             self.cwd = path.clone();
-
             self.cursor = 0;
             self.scroll = 0;
-
             self.refresh();
         }
     }
@@ -96,7 +109,6 @@ impl App {
         if self.cwd.pop() {
             self.cursor = 0;
             self.scroll = 0;
-
             self.refresh();
         }
     }
