@@ -3,11 +3,20 @@ use std::{
     path::PathBuf,
 };
 
+use crate::theme::Theme;
+
+const VIEW_HEIGHT: usize = 20;
+
 pub struct App {
     pub cwd: PathBuf,
     pub entries: Vec<PathBuf>,
+
     pub cursor: usize,
+    pub scroll: usize,
+
     pub should_quit: bool,
+
+    pub theme: Theme,
 }
 
 impl App {
@@ -17,8 +26,13 @@ impl App {
         let mut app = Self {
             cwd,
             entries: Vec::new(),
+
             cursor: 0,
+            scroll: 0,
+
             should_quit: false,
+
+            theme: Theme::default(),
         };
 
         app.refresh();
@@ -47,11 +61,19 @@ impl App {
         if self.cursor > 0 {
             self.cursor -= 1;
         }
+
+        if self.cursor < self.scroll {
+            self.scroll = self.cursor;
+        }
     }
 
     pub fn down(&mut self) {
         if self.cursor + 1 < self.entries.len() {
             self.cursor += 1;
+        }
+
+        if self.cursor >= self.scroll + VIEW_HEIGHT {
+            self.scroll = self.cursor - VIEW_HEIGHT + 1;
         }
     }
 
@@ -62,7 +84,10 @@ impl App {
 
         if path.is_dir() {
             self.cwd = path.clone();
+
             self.cursor = 0;
+            self.scroll = 0;
+
             self.refresh();
         }
     }
@@ -70,6 +95,8 @@ impl App {
     pub fn back(&mut self) {
         if self.cwd.pop() {
             self.cursor = 0;
+            self.scroll = 0;
+
             self.refresh();
         }
     }

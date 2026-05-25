@@ -1,21 +1,25 @@
 mod app;
 mod input;
+mod theme;
 mod ui;
 
 use app::App;
+
 use crossterm::{
     execute,
     terminal::{
-        enable_raw_mode,
         disable_raw_mode,
+        enable_raw_mode,
         EnterAlternateScreen,
         LeaveAlternateScreen,
     },
 };
+
 use ratatui::{
     backend::CrosstermBackend,
     Terminal,
 };
+
 use std::io;
 
 fn main() -> std::io::Result<()> {
@@ -38,10 +42,15 @@ fn main() -> std::io::Result<()> {
 
         match input::read()? {
             input::Action::Up => app.up(),
+
             input::Action::Down => app.down(),
+
             input::Action::Enter => app.enter(),
+
             input::Action::Back => app.back(),
+
             input::Action::Quit => app.quit(),
+
             input::Action::None => {}
         }
 
@@ -52,7 +61,10 @@ fn main() -> std::io::Result<()> {
 
     disable_raw_mode()?;
 
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen
+    )?;
 
     Ok(())
 }
