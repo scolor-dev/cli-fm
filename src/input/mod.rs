@@ -1,7 +1,8 @@
+pub mod keymap;
+
 use crossterm::event::{self, Event, KeyCode};
-use crate::keymap::KeyMap;
-use crate::action::Action;
-use crate::app::Mode;
+
+use crate::{core::{action::Action, mode::Mode}, input::keymap::KeyMap};
 
 pub fn read(mode: &Mode, keymap: &KeyMap) -> std::io::Result<Action> {
     if let Event::Key(key) = event::read()? {
@@ -11,8 +12,6 @@ pub fn read(mode: &Mode, keymap: &KeyMap) -> std::io::Result<Action> {
                 .get(&key.code)
                 .copied()
                 .unwrap_or(Action::None),
-
-            // テキスト入力モード: 特殊キーはキーマップから、それ以外の文字はそのまま InputChar
             Mode::Command | Mode::Search | Mode::PathInput | Mode::Rename | Mode::NewEntry => {
                 keymap
                     .input
@@ -23,7 +22,6 @@ pub fn read(mode: &Mode, keymap: &KeyMap) -> std::io::Result<Action> {
                         _ => Action::None,
                     })
             }
-
             Mode::Confirm => keymap
                 .confirm
                 .get(&key.code)

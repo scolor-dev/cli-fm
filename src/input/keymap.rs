@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use crossterm::event::KeyCode;
 
-use crate::{action::Action, config::Config};
+use crate::{config::Config, core::action::Action};
 
 pub struct KeyMap {
     pub normal: HashMap<KeyCode, Action>,
@@ -65,7 +65,6 @@ pub fn parse_key(key: &str) -> Option<KeyCode> {
         "escape" | "esc" => Some(KeyCode::Esc),
         "tab" => Some(KeyCode::Tab),
         "space" => Some(KeyCode::Char(' ')),
-        // 大文字・小文字を元のまま保持
         _ if key.len() == 1 => Some(KeyCode::Char(key.chars().next()?)),
         _ => None,
     }
