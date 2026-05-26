@@ -16,6 +16,9 @@ impl KeyMap {
         bind(&mut map, &config.keymap.enter, Action::Enter);
         bind(&mut map, &config.keymap.back, Action::Back);
         bind(&mut map, &config.keymap.quit, Action::Quit);
+        bind(&mut map, &config.keymap.command_mode, Action::EnterCommandMode);
+        bind(&mut map, &config.keymap.search_mode, Action::EnterSearchMode);
+        bind(&mut map, &config.keymap.path_mode, Action::EnterPathMode);
 
         Self { map }
     }
@@ -39,14 +42,9 @@ fn parse_key(key: &str) -> Option<KeyCode> {
         "down" => Some(KeyCode::Down),
         "left" => Some(KeyCode::Left),
         "right" => Some(KeyCode::Right),
-
         "enter" => Some(KeyCode::Enter),
         "backspace" => Some(KeyCode::Backspace),
-
-        k if k.len() == 1 => {
-            Some(KeyCode::Char(k.chars().next()?))
-        }
-
+        _ if key.len() == 1 => Some(KeyCode::Char(key.chars().next()?)),
         _ => None,
     }
 }

@@ -5,5 +5,13 @@ pub enum Action {
     Enter,
     Back,
     Quit,
+    EnterCommandMode,
+    EnterSearchMode,
+    EnterPathMode,
+    EnterNormalMode,
+    InputChar(char),
+    InputBackspace,
+    InputSubmit,
+    TabComplete,
     None,
 }

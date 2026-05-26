@@ -8,6 +8,9 @@ down = ["j", "down"]
 enter = ["enter", "l"]
 back = ["h", "backspace"]
 quit = ["q"]
+command_mode = [":"]
+search_mode = ["/"]
+path_mode = ["P"]
 "#;
 
 #[derive(Deserialize)]
@@ -22,6 +25,9 @@ pub struct KeymapConfig {
     pub enter: Vec<String>,
     pub back: Vec<String>,
     pub quit: Vec<String>,
+    pub command_mode: Vec<String>,
+    pub search_mode: Vec<String>,
+    pub path_mode: Vec<String>,
 }
 
 impl Config {

@@ -47,12 +47,20 @@ fn main() -> std::io::Result<()> {
             ui::draw(f, &app);
         })?;
 
-        match input::read(&keymap)? {
-            action::Action::Up => app.up(),
-            action::Action::Down => app.down(),
-            action::Action::Enter => app.enter(),
-            action::Action::Back => app.back(),
+        match input::read(&app.mode, &keymap)? {
+            action::Action::Up => { app.up(); app.update_preview(); }
+            action::Action::Down => { app.down(); app.update_preview(); }
+            action::Action::Enter => { app.enter(); app.update_preview(); }
+            action::Action::Back => { app.back(); app.update_preview(); }
             action::Action::Quit => app.quit(),
+            action::Action::EnterCommandMode => app.enter_command_mode(),
+            action::Action::EnterSearchMode => app.enter_search_mode(),
+            action::Action::EnterPathMode => app.enter_path_mode(),
+            action::Action::EnterNormalMode => app.enter_normal_mode(),
+            action::Action::InputChar(c) => app.push_input_char(c),
+            action::Action::InputBackspace => app.pop_input_char(),
+            action::Action::InputSubmit => app.submit(),
+            action::Action::TabComplete => app.tab_complete(),
             action::Action::None => {}
         }
 
