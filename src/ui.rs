@@ -5,7 +5,7 @@ use ratatui::{
     style::{Style, Color},
 };
 
-use crate::app::{App, Mode};
+use crate::app::{App, ClipboardOp, Mode};
 
 const VIEW_HEIGHT: usize = 20;
 
@@ -56,13 +56,31 @@ pub fn draw(frame: &mut Frame, app: &App) {
         .skip(app.scroll)
         .take(VIEW_HEIGHT);
 
+    let clipboard_path = app.clipboard.as_ref().map(|(p, _)| p);
+
     let items: Vec<ListItem> = visible
-        .map(|path| {
+        .enumerate()
+        .map(|(i, path)| {
             let name = path
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("?");
-            ListItem::new(name.to_string())
+
+            let abs_idx = app.scroll + i;
+            let is_clipboard = clipboard_path.map_or(false, |cp| cp == path);
+            let style = if is_clipboard {
+                match app.clipboard.as_ref().map(|(_, op)| op) {
+                    Some(ClipboardOp::Copy) => Style::default().fg(Color::Cyan),
+                    Some(ClipboardOp::Move) => Style::default().fg(Color::Yellow),
+                    None => Style::default(),
+                }
+            } else if abs_idx == app.cursor {
+                Style::default()
+            } else {
+                Style::default()
+            };
+
+            ListItem::new(name.to_string()).style(style)
         })
         .collect();
 
@@ -97,11 +115,25 @@ pub fn draw(frame: &mut Frame, app: &App) {
     frame.render_widget(preview, columns[1]);
 
     // ステータスバー
-    let (status_text, status_style) = match app.mode {
-        Mode::Normal => (
-            "-- NORMAL --".to_string(),
-            Style::default().fg(Color::Green),
-        ),
+    let (status_text, status_style) = match &app.mode {
+        Mode::Normal => {
+            let base = if let Some(msg) = &app.status_message {
+                format!("-- NORMAL -- | {}", msg)
+            } else {
+                match &app.clipboard {
+                    Some((path, op)) => {
+                        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                        let op_str = match op {
+                            ClipboardOp::Copy => "copy",
+                            ClipboardOp::Move => "move",
+                        };
+                        format!("-- NORMAL -- | [{}] {}", op_str, name)
+                    }
+                    None => "-- NORMAL --".to_string(),
+                }
+            };
+            (base, Style::default().fg(Color::Green))
+        }
         Mode::Command => (
             format!(":{}", app.command_input),
             Style::default().fg(Color::Yellow),
@@ -113,6 +145,10 @@ pub fn draw(frame: &mut Frame, app: &App) {
         Mode::PathInput => (
             "-- PATH --".to_string(),
             Style::default().fg(Color::Yellow),
+        ),
+        Mode::Rename => (
+            format!("-- RENAME -- {}", app.rename_input),
+            Style::default().fg(Color::Magenta),
         ),
     };
 

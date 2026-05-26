@@ -57,10 +57,15 @@ fn main() -> std::io::Result<()> {
             action::Action::EnterSearchMode => app.enter_search_mode(),
             action::Action::EnterPathMode => app.enter_path_mode(),
             action::Action::EnterNormalMode => app.enter_normal_mode(),
+            action::Action::EnterRenameMode => app.enter_rename_mode(),
             action::Action::InputChar(c) => app.push_input_char(c),
             action::Action::InputBackspace => app.pop_input_char(),
-            action::Action::InputSubmit => app.submit(),
+            action::Action::InputSubmit => { app.submit(); app.update_preview(); }
             action::Action::TabComplete => app.tab_complete(),
+            action::Action::Copy => app.copy_to_clipboard(),
+            action::Action::Cut => app.cut_to_clipboard(),
+            action::Action::Paste => app.paste(),
+            action::Action::Delete => app.delete_entry(),
             action::Action::None => {}
         }
 

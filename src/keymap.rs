@@ -19,6 +19,11 @@ impl KeyMap {
         bind(&mut map, &config.keymap.command_mode, Action::EnterCommandMode);
         bind(&mut map, &config.keymap.search_mode, Action::EnterSearchMode);
         bind(&mut map, &config.keymap.path_mode, Action::EnterPathMode);
+        bind(&mut map, &config.keymap.copy, Action::Copy);
+        bind(&mut map, &config.keymap.cut, Action::Cut);
+        bind(&mut map, &config.keymap.paste, Action::Paste);
+        bind(&mut map, &config.keymap.delete, Action::Delete);
+        bind(&mut map, &config.keymap.rename, Action::EnterRenameMode);
 
         Self { map }
     }

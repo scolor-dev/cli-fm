@@ -26,6 +26,13 @@ pub fn read(mode: &Mode, keymap: &KeyMap) -> std::io::Result<Action> {
                 KeyCode::Char(c) => Action::InputChar(c),
                 _ => Action::None,
             },
+            Mode::Rename => match key.code {
+                KeyCode::Esc => Action::EnterNormalMode,
+                KeyCode::Enter => Action::InputSubmit,
+                KeyCode::Backspace => Action::InputBackspace,
+                KeyCode::Char(c) => Action::InputChar(c),
+                _ => Action::None,
+            },
         };
         Ok(action)
     } else {
