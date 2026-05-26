@@ -50,23 +50,19 @@ pub fn draw(frame: &mut Frame, app: &App) {
     frame.render_widget(path_block, left[0]);
 
     // Folder ボックス（ファイル一覧）
-    let visible = app
+    let clipboard_path = app.clipboard.as_ref().map(|(p, _)| p);
+
+    let items: Vec<ListItem> = app
         .entries
         .iter()
         .skip(app.scroll)
-        .take(VIEW_HEIGHT);
-
-    let clipboard_path = app.clipboard.as_ref().map(|(p, _)| p);
-
-    let items: Vec<ListItem> = visible
-        .enumerate()
-        .map(|(i, path)| {
+        .take(VIEW_HEIGHT)
+        .map(|path| {
             let name = path
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("?");
 
-            let abs_idx = app.scroll + i;
             let is_clipboard = clipboard_path.map_or(false, |cp| cp == path);
             let style = if is_clipboard {
                 match app.clipboard.as_ref().map(|(_, op)| op) {
@@ -74,8 +70,6 @@ pub fn draw(frame: &mut Frame, app: &App) {
                     Some(ClipboardOp::Move) => Style::default().fg(Color::Yellow),
                     None => Style::default(),
                 }
-            } else if abs_idx == app.cursor {
-                Style::default()
             } else {
                 Style::default()
             };
@@ -115,24 +109,27 @@ pub fn draw(frame: &mut Frame, app: &App) {
     frame.render_widget(preview, columns[1]);
 
     // ステータスバー
-    let (status_text, status_style) = match &app.mode {
+    let (status_text, status_style) = build_status(app);
+    let status_bar = Paragraph::new(status_text).style(status_style);
+    frame.render_widget(status_bar, outer[1]);
+}
+
+fn build_status(app: &App) -> (String, Style) {
+    match &app.mode {
         Mode::Normal => {
-            let base = if let Some(msg) = &app.status_message {
+            let text = if let Some(msg) = &app.status_message {
                 format!("-- NORMAL -- | {}", msg)
+            } else if let Some((path, op)) = &app.clipboard {
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                let op_str = match op {
+                    ClipboardOp::Copy => "copy",
+                    ClipboardOp::Move => "move",
+                };
+                format!("-- NORMAL -- | [{}] {}", op_str, name)
             } else {
-                match &app.clipboard {
-                    Some((path, op)) => {
-                        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                        let op_str = match op {
-                            ClipboardOp::Copy => "copy",
-                            ClipboardOp::Move => "move",
-                        };
-                        format!("-- NORMAL -- | [{}] {}", op_str, name)
-                    }
-                    None => "-- NORMAL --".to_string(),
-                }
+                "-- NORMAL --".to_string()
             };
-            (base, Style::default().fg(Color::Green))
+            (text, Style::default().fg(Color::Green))
         }
         Mode::Command => (
             format!(":{}", app.command_input),
@@ -143,15 +140,27 @@ pub fn draw(frame: &mut Frame, app: &App) {
             Style::default().fg(Color::Cyan),
         ),
         Mode::PathInput => (
-            "-- PATH --".to_string(),
+            format!("-- PATH -- {}", app.path_input),
             Style::default().fg(Color::Yellow),
         ),
         Mode::Rename => (
             format!("-- RENAME -- {}", app.rename_input),
             Style::default().fg(Color::Magenta),
         ),
-    };
-
-    let status_bar = Paragraph::new(status_text).style(status_style);
-    frame.render_widget(status_bar, outer[1]);
+        Mode::NewEntry => (
+            format!("-- NEW -- {} (end with / for dir)", app.new_entry_input),
+            Style::default().fg(Color::LightGreen),
+        ),
+        Mode::Confirm => {
+            let target = app.confirm_action.as_ref().map(|a| match a {
+                crate::app::ConfirmAction::Delete(p) => {
+                    p.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string()
+                }
+            }).unwrap_or_default();
+            (
+                format!("Delete \"{}\"? [y/n]", target),
+                Style::default().fg(Color::Red),
+            )
+        }
+    }
 }

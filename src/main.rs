@@ -1,4 +1,5 @@
 mod app;
+mod history;
 mod input;
 mod ui;
 mod theme;
@@ -58,6 +59,7 @@ fn main() -> std::io::Result<()> {
             action::Action::EnterPathMode => app.enter_path_mode(),
             action::Action::EnterNormalMode => app.enter_normal_mode(),
             action::Action::EnterRenameMode => app.enter_rename_mode(),
+            action::Action::EnterNewEntryMode => app.enter_new_entry_mode(),
             action::Action::InputChar(c) => app.push_input_char(c),
             action::Action::InputBackspace => app.pop_input_char(),
             action::Action::InputSubmit => { app.submit(); app.update_preview(); }
@@ -65,7 +67,11 @@ fn main() -> std::io::Result<()> {
             action::Action::Copy => app.copy_to_clipboard(),
             action::Action::Cut => app.cut_to_clipboard(),
             action::Action::Paste => app.paste(),
-            action::Action::Delete => app.delete_entry(),
+            action::Action::Delete => app.request_delete(),
+            action::Action::ConfirmYes => { app.confirm_yes(); app.update_preview(); }
+            action::Action::ConfirmNo => app.enter_normal_mode(),
+            action::Action::Undo => app.undo(),
+            action::Action::Redo => app.redo(),
             action::Action::None => {}
         }
 

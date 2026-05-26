@@ -1,9 +1,12 @@
 use std::{
     fs,
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 
-use crate::theme::Theme;
+use crate::{
+    history::{copy_dir_all, make_trash_path, move_any, HistoryEntry},
+    theme::Theme,
+};
 
 const VIEW_HEIGHT: usize = 20;
 
@@ -14,12 +17,19 @@ pub enum Mode {
     Search,
     PathInput,
     Rename,
+    NewEntry,
+    Confirm,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClipboardOp {
     Copy,
     Move,
+}
+
+#[derive(Debug, Clone)]
+pub enum ConfirmAction {
+    Delete(PathBuf),
 }
 
 pub struct App {
@@ -40,13 +50,18 @@ pub struct App {
     pub search_input: String,
     pub path_input: String,
     pub rename_input: String,
+    pub new_entry_input: String,
 
     pub completions: Vec<String>,
     pub completion_index: usize,
     pub completion_base: Option<String>,
 
     pub clipboard: Option<(PathBuf, ClipboardOp)>,
+    pub confirm_action: Option<ConfirmAction>,
     pub status_message: Option<String>,
+
+    pub undo_stack: Vec<HistoryEntry>,
+    pub redo_stack: Vec<HistoryEntry>,
 }
 
 impl App {
@@ -66,11 +81,15 @@ impl App {
             search_input: String::new(),
             path_input: String::new(),
             rename_input: String::new(),
+            new_entry_input: String::new(),
             completions: Vec::new(),
             completion_index: 0,
             completion_base: None,
             clipboard: None,
+            confirm_action: None,
             status_message: None,
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
         };
 
         app.refresh();
@@ -114,7 +133,6 @@ impl App {
         if self.cursor > 0 {
             self.cursor -= 1;
         }
-
         if self.cursor < self.scroll {
             self.scroll = self.cursor;
         }
@@ -124,7 +142,6 @@ impl App {
         if self.cursor + 1 < self.entries.len() {
             self.cursor += 1;
         }
-
         if self.cursor >= self.scroll + VIEW_HEIGHT {
             self.scroll = self.cursor - VIEW_HEIGHT + 1;
         }
@@ -134,7 +151,6 @@ impl App {
         let Some(path) = self.entries.get(self.cursor) else {
             return;
         };
-
         if path.is_dir() {
             self.cwd = path.clone();
             self.cursor = 0;
@@ -167,6 +183,7 @@ impl App {
 
     pub fn enter_normal_mode(&mut self) {
         self.mode = Mode::Normal;
+        self.confirm_action = None;
     }
 
     pub fn enter_path_mode(&mut self) {
@@ -186,37 +203,38 @@ impl App {
         self.mode = Mode::Rename;
     }
 
+    pub fn enter_new_entry_mode(&mut self) {
+        self.new_entry_input.clear();
+        self.mode = Mode::NewEntry;
+    }
+
+    // ── クリップボード ────────────────────────────────────────────────
+
     pub fn copy_to_clipboard(&mut self) {
         let Some(path) = self.entries.get(self.cursor) else {
             return;
         };
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
         self.clipboard = Some((path.clone(), ClipboardOp::Copy));
-        self.status_message = Some(format!(
-            "Copied: {}",
-            path.file_name().and_then(|n| n.to_str()).unwrap_or("")
-        ));
+        self.status_message = Some(format!("Copied: {}", name));
     }
 
     pub fn cut_to_clipboard(&mut self) {
         let Some(path) = self.entries.get(self.cursor) else {
             return;
         };
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
         self.clipboard = Some((path.clone(), ClipboardOp::Move));
-        self.status_message = Some(format!(
-            "Cut: {}",
-            path.file_name().and_then(|n| n.to_str()).unwrap_or("")
-        ));
+        self.status_message = Some(format!("Cut: {}", name));
     }
 
     pub fn paste(&mut self) {
         let Some((src, op)) = self.clipboard.clone() else {
             return;
         };
-
         let Some(name) = src.file_name() else {
             return;
         };
-
         let dest = self.cwd.join(name);
 
         if dest == src {
@@ -224,7 +242,7 @@ impl App {
             return;
         }
 
-        let result = match op {
+        let result = match &op {
             ClipboardOp::Copy => {
                 if src.is_dir() {
                     copy_dir_all(&src, &dest)
@@ -232,17 +250,110 @@ impl App {
                     fs::copy(&src, &dest).map(|_| ())
                 }
             }
-            ClipboardOp::Move => fs::rename(&src, &dest).map_err(Into::into),
+            ClipboardOp::Move => move_any(&src, &dest),
         };
 
         match result {
             Ok(()) => {
-                if op == ClipboardOp::Move {
-                    self.clipboard = None;
+                let entry = match op {
+                    ClipboardOp::Copy => HistoryEntry::Copied { src: src.clone(), dest: dest.clone() },
+                    ClipboardOp::Move => {
+                        self.clipboard = None;
+                        HistoryEntry::Moved { src: src.clone(), dest: dest.clone() }
+                    }
+                };
+                self.push_history(entry);
+                self.status_message = Some(format!("Pasted: {}", name.to_string_lossy()));
+                self.refresh();
+                self.update_preview();
+            }
+            Err(e) => {
+                self.status_message = Some(format!("Error: {}", e));
+            }
+        }
+    }
+
+    // ── 削除（確認付き） ──────────────────────────────────────────────
+
+    pub fn request_delete(&mut self) {
+        let Some(path) = self.entries.get(self.cursor).cloned() else {
+            return;
+        };
+        self.confirm_action = Some(ConfirmAction::Delete(path));
+        self.mode = Mode::Confirm;
+    }
+
+    pub fn confirm_yes(&mut self) {
+        if let Some(ConfirmAction::Delete(path)) = self.confirm_action.take() {
+            self.execute_delete(path);
+        }
+        self.mode = Mode::Normal;
+    }
+
+    fn execute_delete(&mut self, path: PathBuf) {
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .to_string();
+
+        match make_trash_path(&path) {
+            Ok(trash) => {
+                let result = move_any(&path, &trash);
+                match result {
+                    Ok(()) => {
+                        self.push_history(HistoryEntry::Deleted {
+                            original: path,
+                            trash,
+                        });
+                        self.status_message = Some(format!("Deleted: {}", name));
+                        self.refresh();
+                        self.update_preview();
+                    }
+                    Err(e) => {
+                        self.status_message = Some(format!("Error: {}", e));
+                    }
                 }
+            }
+            Err(e) => {
+                self.status_message = Some(format!("Error creating trash: {}", e));
+            }
+        }
+    }
+
+    // ── 新規ファイル / フォルダ ───────────────────────────────────────
+
+    fn create_new_entry(&mut self) {
+        let input = self.new_entry_input.trim().to_string();
+        if input.is_empty() {
+            self.mode = Mode::Normal;
+            return;
+        }
+
+        let is_dir = input.ends_with('/');
+        let rel: std::path::PathBuf = input.trim_end_matches('/').into();
+        let target = self.cwd.join(&rel);
+
+        let result: std::io::Result<()> = if is_dir {
+            fs::create_dir_all(&target)
+        } else {
+            (|| {
+                if let Some(parent) = target.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                fs::File::create(&target).map(|_| ())
+            })()
+        };
+
+        match result {
+            Ok(()) => {
+                self.push_history(HistoryEntry::Created {
+                    path: target,
+                    is_dir,
+                });
                 self.status_message = Some(format!(
-                    "Pasted: {}",
-                    name.to_string_lossy()
+                    "Created: {}",
+                    rel.display()
                 ));
                 self.refresh();
                 self.update_preview();
@@ -251,36 +362,58 @@ impl App {
                 self.status_message = Some(format!("Error: {}", e));
             }
         }
+
+        self.mode = Mode::Normal;
     }
 
-    pub fn delete_entry(&mut self) {
-        let Some(path) = self.entries.get(self.cursor).cloned() else {
+    // ── リネーム ─────────────────────────────────────────────────────
+
+    // ── Undo / Redo ───────────────────────────────────────────────────
+
+    pub fn undo(&mut self) {
+        let Some(entry) = self.undo_stack.pop() else {
+            self.status_message = Some("Nothing to undo".to_string());
             return;
         };
-
-        let name = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("")
-            .to_string();
-
-        let result = if path.is_dir() {
-            fs::remove_dir_all(&path)
-        } else {
-            fs::remove_file(&path)
-        };
-
-        match result {
+        let desc = entry.description();
+        match entry.undo() {
             Ok(()) => {
-                self.status_message = Some(format!("Deleted: {}", name));
+                self.status_message = Some(format!("Undone: {}", desc));
+                self.redo_stack.push(entry);
                 self.refresh();
                 self.update_preview();
             }
             Err(e) => {
-                self.status_message = Some(format!("Error: {}", e));
+                self.status_message = Some(format!("Undo failed: {}", e));
             }
         }
     }
+
+    pub fn redo(&mut self) {
+        let Some(entry) = self.redo_stack.pop() else {
+            self.status_message = Some("Nothing to redo".to_string());
+            return;
+        };
+        let desc = entry.description();
+        match entry.redo() {
+            Ok(()) => {
+                self.status_message = Some(format!("Redone: {}", desc));
+                self.undo_stack.push(entry);
+                self.refresh();
+                self.update_preview();
+            }
+            Err(e) => {
+                self.status_message = Some(format!("Redo failed: {}", e));
+            }
+        }
+    }
+
+    fn push_history(&mut self, entry: HistoryEntry) {
+        self.undo_stack.push(entry);
+        self.redo_stack.clear();
+    }
+
+    // ── 入力 ─────────────────────────────────────────────────────────
 
     pub fn push_input_char(&mut self, c: char) {
         match self.mode {
@@ -291,7 +424,8 @@ impl App {
                 self.completion_base = None;
             }
             Mode::Rename => self.rename_input.push(c),
-            Mode::Normal => {}
+            Mode::NewEntry => self.new_entry_input.push(c),
+            Mode::Normal | Mode::Confirm => {}
         }
     }
 
@@ -304,7 +438,8 @@ impl App {
                 self.completion_base = None;
             }
             Mode::Rename => { self.rename_input.pop(); }
-            Mode::Normal => {}
+            Mode::NewEntry => { self.new_entry_input.pop(); }
+            Mode::Normal | Mode::Confirm => {}
         }
     }
 
@@ -338,7 +473,7 @@ impl App {
     pub fn submit(&mut self) {
         match self.mode {
             Mode::PathInput => {
-                let path = PathBuf::from(&self.path_input);
+                let path = std::path::PathBuf::from(&self.path_input);
                 if path.is_dir() {
                     self.cwd = path;
                     self.cursor = 0;
@@ -348,9 +483,8 @@ impl App {
                 }
                 self.mode = Mode::Normal;
             }
-            Mode::Rename => {
-                self.submit_rename();
-            }
+            Mode::Rename => self.submit_rename(),
+            Mode::NewEntry => self.create_new_entry(),
             _ => self.mode = Mode::Normal,
         }
     }
@@ -362,7 +496,9 @@ impl App {
         };
 
         let new_name = self.rename_input.trim().to_string();
-        if new_name.is_empty() || new_name == src.file_name().and_then(|n| n.to_str()).unwrap_or("") {
+        let old_name = src.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+
+        if new_name.is_empty() || new_name == old_name {
             self.mode = Mode::Normal;
             return;
         }
@@ -370,6 +506,10 @@ impl App {
         let dest = self.cwd.join(&new_name);
         match fs::rename(&src, &dest) {
             Ok(()) => {
+                self.push_history(HistoryEntry::Renamed {
+                    old: src,
+                    new: dest,
+                });
                 self.status_message = Some(format!("Renamed to: {}", new_name));
                 self.refresh();
                 self.update_preview();
@@ -380,20 +520,6 @@ impl App {
         }
         self.mode = Mode::Normal;
     }
-}
-
-fn copy_dir_all(src: &Path, dest: &Path) -> std::io::Result<()> {
-    fs::create_dir_all(dest)?;
-    for entry in fs::read_dir(src)? {
-        let entry = entry?;
-        let dest_path = dest.join(entry.file_name());
-        if entry.path().is_dir() {
-            copy_dir_all(&entry.path(), &dest_path)?;
-        } else {
-            fs::copy(entry.path(), dest_path)?;
-        }
-    }
-    Ok(())
 }
 
 fn path_completions(input: &str) -> Vec<String> {

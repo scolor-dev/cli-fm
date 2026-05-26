@@ -10,6 +10,7 @@ pub enum Action {
     EnterPathMode,
     EnterNormalMode,
     EnterRenameMode,
+    EnterNewEntryMode,
     InputChar(char),
     InputBackspace,
     InputSubmit,
@@ -18,5 +19,9 @@ pub enum Action {
     Cut,
     Paste,
     Delete,
+    ConfirmYes,
+    ConfirmNo,
+    Undo,
+    Redo,
     None,
 }
